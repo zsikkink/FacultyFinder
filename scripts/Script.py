@@ -63,7 +63,8 @@ def fetch_author_details(author_id):
     Returns:
         dict: A dictionary containing detailed information about the author.
     """
-    response = requests.get(author_id)
+    author_api_url = f"https://api.openalex.org/authors/{author_id.split('/')[-1]}"
+    response = requests.get(author_api_url)
     if response.status_code != 200:
         print(f"Error {response.status_code}: {response.text}")
         return {}
