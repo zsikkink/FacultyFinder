@@ -7,7 +7,7 @@ def fetch_uva_institutions():
     params = {
         "search": "University of Virginia",
         "per_page": 6,
-        "mailto": "your_email@example.com"
+        "mailto": "ted2ce@virginia.edu"
     }
 
     all_results = []
