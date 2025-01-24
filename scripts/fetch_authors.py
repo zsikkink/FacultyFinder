@@ -45,6 +45,7 @@ def fetch_institution_people(institution_id):
                     detailed_author_info = fetch_author_details(author_id)
                     if detailed_author_info:  # Ensure valid data is returned
                         detailed_author_info["publications"] = fetch_author_publications(author_id)
+                        detailed_author_info["institution_openalex_id"] = institution_id
                         all_people.append(detailed_author_info)
                         seen_people.add(author_id)
                 if len(all_people) >= 10:
@@ -91,19 +92,25 @@ def fetch_author_publications(author_id):
     Returns:
         list: A list of openalex_id values for the author's publications.
     """
-    works_api_url = f"https://api.openalex.org/works?filter=authorships.author.id:{author_id.split('/')[-1]}"
-    response = requests.get(works_api_url)
-    if response.status_code != 200:
-        print(f"Error {response.status_code}: {response.text}")
-        return []
+    publications = []
+    works_api_url = f"https://api.openalex.org/works?filter=authorships.author.id:{author_id.split('/')[-1]}&per_page=200"
+    next_url = works_api_url
 
-    try:
-        data = response.json()
-        publications = [work["id"] for work in data.get("results", [])]
-        return publications
-    except requests.exceptions.JSONDecodeError:
-        print(f"Error decoding JSON for author ID: {author_id}")
-        return []
+    while next_url:
+        response = requests.get(next_url)
+        if response.status_code != 200:
+            print(f"Error {response.status_code}: {response.text}")
+            break
+
+        try:
+            data = response.json()
+            publications.extend([work["id"] for work in data.get("results", [])])
+            next_url = data.get("meta", {}).get("next_page_url")
+        except requests.exceptions.JSONDecodeError:
+            print(f"Error decoding JSON for author ID: {author_id}")
+            break
+
+    return publications
 
 def clear_authors_table(user, password):
     conn = psycopg2.connect(
@@ -136,7 +143,7 @@ def clear_and_store_authors(authors, user, password):
     for author in authors:
         print(f"Inserting author: {author['display_name']}")  # Debug statement
         cur.execute("""
-            INSERT INTO authors (openalex_id, display_name, orcid, works_count, cited_by_count, last_known_institution, counts_by_year, works_api_url, cited_by_api_url, affiliations, h_index, i10_index, publications, updated_date)
+            INSERT INTO authors (openalex_id, display_name, orcid, works_count, cited_by_count, counts_by_year, works_api_url, cited_by_api_url, affiliations, h_index, i10_index, publications, updated_date, institution_openalex_id)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (openalex_id) DO NOTHING;
         """, (
@@ -145,7 +152,6 @@ def clear_and_store_authors(authors, user, password):
             author.get("orcid"),
             author.get("works_count"),
             author.get("cited_by_count"),
-            json.dumps(author.get("last_known_institution")),  # Convert dict to JSON string
             json.dumps(author.get("counts_by_year")),  # Convert dict to JSON string
             author.get("works_api_url"),
             author.get("cited_by_api_url"),
@@ -153,7 +159,8 @@ def clear_and_store_authors(authors, user, password):
             author.get("h_index"),
             author.get("i10_index"),
             json.dumps(author.get("publications")),  # Convert list to JSON string
-            author.get("updated_date")
+            author.get("updated_date"),
+            author["institution_openalex_id"]
         ))
 
     conn.commit()
